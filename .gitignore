@@ -7,3 +7,6 @@ out/
 *.iws
 .DS_Store
 local.properties
+.ace-tool/
+.intellijPlatform/
+.kotlin/
