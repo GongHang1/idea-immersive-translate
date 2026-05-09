@@ -56,6 +56,7 @@
 
     <extensions defaultExtensionNs="com.laowang.idea.immersive">
         <translationEngine implementation="com.laowang.idea.immersive.engine.OpenAIEngine"/>
+        <translationEngine implementation="com.laowang.idea.immersive.engine.GeminiEngine"/>
         <textExtractor implementation="com.laowang.idea.immersive.extractor.PsiCommentExtractor"/>
         <textExtractor implementation="com.laowang.idea.immersive.extractor.MarkdownBlockExtractor"/>
         <textExtractor implementation="com.laowang.idea.immersive.extractor.PlainTextBlockExtractor"/>
