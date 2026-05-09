@@ -1,0 +1,20 @@
+<idea-plugin>
+    <id>com.laowang.idea.immersive</id>
+    <name>Immersive Translate</name>
+    <vendor email="laowang@example.com" url="https://github.com/laowang/idea-immersive-translate">Laowang</vendor>
+
+    <description><![CDATA[
+        <p>Immersive bilingual translation for code comments, Markdown, Quick Doc, and Console.
+        BYOK (OpenAI / DeepL / Custom). v0.1.0 only supports OpenAI + Java/Kotlin comment Inlay.</p>
+    ]]></description>
+
+    <resource-bundle>messages.ImmersiveTranslateBundle</resource-bundle>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.java</depends>
+    <depends>org.jetbrains.kotlin</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- 后续 Task 22 装入: extensionPoint, applicationConfigurable, applicationService, notificationGroup, action -->
+    </extensions>
+</idea-plugin>
