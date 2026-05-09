@@ -19,7 +19,7 @@ object ErrorHandler {
                 openSettingsAction(),
             )
             TranslationError.NetworkTimeout -> Triple(
-                "Network timeout. Check proxy or retry.",
+                "Network timeout. Check IDE proxy, provider base URL, or retry.",
                 NotificationType.WARNING,
                 null,
             )

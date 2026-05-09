@@ -131,7 +131,7 @@ class MicrosoftTranslatorEngine(
 
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder().build()
+        private fun defaultClient(): OkHttpClient = HttpClientFactory.create()
 
         private fun defaultJson(): Json = Json {
             ignoreUnknownKeys = true
