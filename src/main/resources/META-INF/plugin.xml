@@ -4,8 +4,8 @@
     <vendor email="laowang@example.com" url="https://github.com/laowang/idea-immersive-translate">Laowang</vendor>
 
     <description><![CDATA[
-        <p>Immersive bilingual translation for code comments, Markdown, Quick Doc, and Console.
-        BYOK (OpenAI / DeepL / Custom). v0.1.0 only supports OpenAI + Java/Kotlin comment Inlay.</p>
+        <p>Immersive bilingual translation for code comments, Markdown, and plain text files.
+        Supports OpenAI-compatible, Gemini, Microsoft Translator, and Google Cloud Translation providers with provider-scoped credentials.</p>
     ]]></description>
 
     <resource-bundle>messages.ImmersiveTranslateBundle</resource-bundle>
@@ -74,7 +74,7 @@
             id="com.laowang.idea.immersive.ImmersiveTranslateAction"
             class="com.laowang.idea.immersive.trigger.ImmersiveTranslateAction"
             text="Immersive Translate"
-            description="Translate comments in current editor">
+            description="Translate source text in current editor">
             <keyboard-shortcut keymap="$default" first-keystroke="alt I"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
