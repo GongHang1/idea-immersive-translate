@@ -69,6 +69,89 @@ class TranslationCoordinatorTest : BasePlatformTestCase() {
         assertFalse(coordinator.hasVisibleTranslations(myFixture.editor))
     }
 
+    fun testEmptyExtractionRendersNothing() {
+        myFixture.configureByText("A.java", "class A {}")
+        val renderer = RecordingRenderer()
+        val coordinator = TranslationCoordinator(
+            project = project,
+            extractorProvider = { FakeExtractor(emptyList()) },
+            engineProvider = { PrefixEngine() },
+            cache = TranslationCache(maxEntries = 10),
+            rendererProvider = { renderer },
+        )
+
+        coordinator.translateBlocking(myFixture.editor, SourceType.PSI_COMMENT, ExtractionScope.WHOLE_FILE)
+
+        assertTrue(renderer.rendered.isEmpty())
+    }
+
+    fun testTranslationCountMismatchRendersNothingAndNotifiesError() {
+        myFixture.configureByText("A.java", "// hello\n// world")
+        val first = segment("seg-1", "hello")
+        val second = segment("seg-2", "world")
+        val renderer = RecordingRenderer()
+        val errors = mutableListOf<TranslationError>()
+        val coordinator = TranslationCoordinator(
+            project = project,
+            extractorProvider = { FakeExtractor(listOf(first, second)) },
+            engineProvider = {
+                FixedEngine(
+                    listOf(
+                        Translation(first.id, "你好", "openai", 1L),
+                    ),
+                )
+            },
+            cache = TranslationCache(maxEntries = 10),
+            rendererProvider = { renderer },
+            errorNotifier = { errors += it },
+        )
+
+        coordinator.translateBlocking(myFixture.editor, SourceType.PSI_COMMENT, ExtractionScope.WHOLE_FILE)
+
+        assertTrue(renderer.rendered.isEmpty())
+        assertTrue(errors.single() is TranslationError.Unknown)
+    }
+
+    fun testFailedProviderCallRendersNothingAndNotifiesError() {
+        myFixture.configureByText("A.java", "// hello")
+        val renderer = RecordingRenderer()
+        val errors = mutableListOf<TranslationError>()
+        val coordinator = TranslationCoordinator(
+            project = project,
+            extractorProvider = { FakeExtractor(listOf(segment("seg-1", "hello"))) },
+            engineProvider = { FailureEngine(TranslationError.NoApiKey) },
+            cache = TranslationCache(maxEntries = 10),
+            rendererProvider = { renderer },
+            errorNotifier = { errors += it },
+        )
+
+        coordinator.translateBlocking(myFixture.editor, SourceType.PSI_COMMENT, ExtractionScope.WHOLE_FILE)
+
+        assertTrue(renderer.rendered.isEmpty())
+        assertEquals(listOf(TranslationError.NoApiKey), errors)
+    }
+
+    fun testCachedTranslationsRenderForMatchingSegmentIds() {
+        myFixture.configureByText("A.java", "// hello")
+        val segment = segment("seg-1", "hello")
+        val cache = TranslationCache(maxEntries = 10)
+        cache.put(Translation(segment.id, "缓存译文", "openai", 1L))
+        val renderer = RecordingRenderer()
+        val engine = PrefixEngine()
+        val coordinator = TranslationCoordinator(
+            project = project,
+            extractorProvider = { FakeExtractor(listOf(segment)) },
+            engineProvider = { engine },
+            cache = cache,
+            rendererProvider = { renderer },
+        )
+
+        coordinator.translateBlocking(myFixture.editor, SourceType.PSI_COMMENT, ExtractionScope.WHOLE_FILE)
+
+        assertEquals(0, engine.calls)
+        assertEquals(listOf("seg-1" to "缓存译文"), renderer.rendered)
+    }
+
     private fun segment(id: String, content: String): TextSegment =
         TextSegment(
             id = id,
@@ -108,6 +191,22 @@ class TranslationCoordinatorTest : BasePlatformTestCase() {
                 },
             )
         }
+    }
+
+    private class FixedEngine(private val translations: List<Translation>) : TranslationEngine {
+        override val id: String = "openai"
+        override val displayName: String = "Fixed OpenAI"
+
+        override fun translate(segments: List<TextSegment>): TranslationEngineResult =
+            TranslationEngineResult.Success(translations)
+    }
+
+    private class FailureEngine(private val error: TranslationError) : TranslationEngine {
+        override val id: String = "openai"
+        override val displayName: String = "Failing OpenAI"
+
+        override fun translate(segments: List<TextSegment>): TranslationEngineResult =
+            TranslationEngineResult.Failure(error)
     }
 
     private class RecordingRenderer : TranslationRenderer {

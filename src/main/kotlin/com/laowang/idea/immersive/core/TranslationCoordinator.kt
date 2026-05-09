@@ -40,6 +40,7 @@ class TranslationCoordinator(private val project: Project) {
         RendererRegistry.getRenderers().firstOrNull { it.id == rendererId } ?: InlayRenderer()
     }
     private var cache: TranslationCache = service()
+    private var errorNotifier: (TranslationError) -> Unit = { error -> notifyError(error) }
 
     constructor(
         project: Project,
@@ -47,11 +48,13 @@ class TranslationCoordinator(private val project: Project) {
         engineProvider: () -> TranslationEngine,
         cache: TranslationCache,
         rendererProvider: () -> TranslationRenderer,
+        errorNotifier: (TranslationError) -> Unit = { error -> ErrorHandler.notify(project, error) },
     ) : this(project) {
         this.extractorProvider = extractorProvider
         this.engineProvider = engineProvider
         this.cache = cache
         this.rendererProvider = rendererProvider
+        this.errorNotifier = errorNotifier
     }
 
     fun translate(editor: Editor, sourceType: SourceType, scope: ExtractionScope) {
@@ -114,7 +117,7 @@ class TranslationCoordinator(private val project: Project) {
                 segments = missingSegments,
                 translations = result.translations,
             )
-            is TranslationEngineResult.Failure -> notifyError(result.error)
+            is TranslationEngineResult.Failure -> errorNotifier(result.error)
         }
     }
 
@@ -124,10 +127,36 @@ class TranslationCoordinator(private val project: Project) {
         segments: List<TextSegment>,
         translations: List<Translation>,
     ) {
+        val mismatch = validateTranslationAlignment(segments, translations)
+        if (mismatch != null) {
+            errorNotifier(mismatch)
+            return
+        }
         segments.zip(translations).forEach { (segment, translation) ->
             cache.put(translation)
             renderer.render(editor, segment, translation)
         }
+    }
+
+    private fun validateTranslationAlignment(
+        segments: List<TextSegment>,
+        translations: List<Translation>,
+    ): TranslationError? {
+        if (segments.size != translations.size) {
+            return TranslationError.Unknown(
+                IllegalStateException(
+                    "Expected ${segments.size} translations but received ${translations.size}",
+                ),
+            )
+        }
+        val mismatched = segments.zip(translations).firstOrNull { (segment, translation) ->
+            translation.segmentId != segment.id
+        } ?: return null
+        return TranslationError.Unknown(
+            IllegalStateException(
+                "Translation segment mismatch: expected ${mismatched.first.id} but received ${mismatched.second.segmentId}",
+            ),
+        )
     }
 
     private fun notifyError(error: TranslationError) {
