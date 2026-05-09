@@ -140,6 +140,7 @@ class TranslationCoordinator(private val project: Project) {
         get() = when (this) {
             SourceType.PSI_COMMENT -> "psi-comment"
             SourceType.MARKDOWN_BLOCK -> "markdown-block"
+            SourceType.PLAIN_TEXT_BLOCK -> "plain-text-block"
             SourceType.CONSOLE_LINE -> "console-line"
             SourceType.QUICK_DOC -> "quick-doc"
         }
