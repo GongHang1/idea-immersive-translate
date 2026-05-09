@@ -17,16 +17,12 @@ import com.laowang.idea.immersive.renderer.TranslationRenderer
 import com.laowang.idea.immersive.renderer.inlay.InlayRenderer
 import com.laowang.idea.immersive.settings.SettingsService
 import com.laowang.idea.immersive.util.Log
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 @Service(Service.Level.PROJECT)
 class TranslationCoordinator(private val project: Project) {
-    private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var extractorProvider: (SourceType) -> TextExtractor = { sourceType ->
         ExtractorRegistry.getExtractors()
             .firstOrNull { it.id == sourceType.defaultExtractorId }
@@ -41,6 +37,13 @@ class TranslationCoordinator(private val project: Project) {
     }
     private var cache: TranslationCache = service()
     private var errorNotifier: (TranslationError) -> Unit = { error -> notifyError(error) }
+    private var progressRunner: TranslationProgressRunner = IdeTranslationProgressRunner
+    private var progressTitleProvider: () -> String = {
+        ImmersiveTranslateMessages.message(
+            "progress.translating",
+            "Immersive Translate: Translating...",
+        )
+    }
 
     constructor(
         project: Project,
@@ -49,24 +52,48 @@ class TranslationCoordinator(private val project: Project) {
         cache: TranslationCache,
         rendererProvider: () -> TranslationRenderer,
         errorNotifier: (TranslationError) -> Unit = { error -> ErrorHandler.notify(project, error) },
+        progressRunner: TranslationProgressRunner = IdeTranslationProgressRunner,
+        progressTitleProvider: () -> String = {
+            ImmersiveTranslateMessages.message(
+                "progress.translating",
+                "Immersive Translate: Translating...",
+            )
+        },
     ) : this(project) {
         this.extractorProvider = extractorProvider
         this.engineProvider = engineProvider
         this.cache = cache
         this.rendererProvider = rendererProvider
         this.errorNotifier = errorNotifier
+        this.progressRunner = progressRunner
+        this.progressTitleProvider = progressTitleProvider
     }
 
     fun translate(editor: Editor, sourceType: SourceType, scope: ExtractionScope) {
-        coroutineScope.launch {
-            translateInternal(editor, sourceType, scope)
+        progressRunner.run(project, progressTitleProvider()) { cancellationToken ->
+            runBlocking {
+                translateInternal(editor, sourceType, scope, cancellationToken)
+            }
         }
     }
 
-    fun translateBlocking(editor: Editor, sourceType: SourceType, scope: ExtractionScope) {
+    fun translateBlocking(
+        editor: Editor,
+        sourceType: SourceType,
+        scope: ExtractionScope,
+        cancellationToken: TranslationCancellationToken = TranslationCancellationToken(),
+    ) {
         runBlocking {
-            translateInternal(editor, sourceType, scope)
+            translateInternal(editor, sourceType, scope, cancellationToken)
         }
+    }
+
+    fun toggle(editor: Editor, sourceType: SourceType, scope: ExtractionScope) {
+        if (hasVisibleTranslations(editor)) {
+            clear(editor)
+            return
+        }
+        translate(editor, sourceType, scope)
     }
 
     fun clear(editor: Editor) {
@@ -81,13 +108,24 @@ class TranslationCoordinator(private val project: Project) {
         return TranslationOverlayStore.getInstance(project).hasAny(editor)
     }
 
-    private suspend fun translateInternal(editor: Editor, sourceType: SourceType, scope: ExtractionScope) {
+    private suspend fun translateInternal(
+        editor: Editor,
+        sourceType: SourceType,
+        scope: ExtractionScope,
+        cancellationToken: TranslationCancellationToken,
+    ) {
+        if (cancellationToken.isCancelled) {
+            return
+        }
         val extractor = extractorProvider(sourceType)
         if (!extractor.isApplicable(editor)) {
             Log.info("No applicable extractor found for $sourceType")
             return
         }
         val segments = extractor.extract(editor, scope)
+        if (cancellationToken.isCancelled) {
+            return
+        }
         if (segments.isEmpty()) {
             Log.info("No translatable segments found")
             return
@@ -108,7 +146,10 @@ class TranslationCoordinator(private val project: Project) {
         }
 
         val result = withContext(Dispatchers.IO) {
-            engineProvider().translate(missingSegments)
+            engineProvider().translate(missingSegments, cancellationToken)
+        }
+        if (cancellationToken.isCancelled) {
+            return
         }
         when (result) {
             is TranslationEngineResult.Success -> renderFreshTranslations(
@@ -118,6 +159,7 @@ class TranslationCoordinator(private val project: Project) {
                 translations = result.translations,
             )
             is TranslationEngineResult.Failure -> errorNotifier(result.error)
+            is TranslationEngineResult.Cancelled -> Unit
         }
     }
 

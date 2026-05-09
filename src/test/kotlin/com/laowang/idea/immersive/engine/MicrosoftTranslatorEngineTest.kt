@@ -7,7 +7,6 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -20,7 +19,12 @@ class MicrosoftTranslatorEngineTest {
     }
 
     @Test
-    fun `translate sends microsoft request and parses response`() {
+    fun `translate uses edge token and sends free microsoft request`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("edge-token"),
+        )
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
@@ -35,10 +39,9 @@ class MicrosoftTranslatorEngineTest {
         )
         server.start()
         val engine = MicrosoftTranslatorEngine(
-            apiKeyProvider = { "microsoft-key" },
             baseUrlProvider = { server.url("/").toString().removeSuffix("/") },
+            authUrlProvider = { server.url("/auth").toString() },
             targetLangProvider = { "zh-CN" },
-            regionProvider = { "eastus" },
         )
 
         val result = engine.translate(listOf(segment("seg-1", "first"), segment("seg-2", "second")))
@@ -47,36 +50,49 @@ class MicrosoftTranslatorEngineTest {
         assertEquals(listOf("seg-1", "seg-2"), success.translations.map { it.segmentId })
         assertEquals(listOf("第一段译文", "第二段译文"), success.translations.map { it.translatedText })
 
+        val authRequest = server.takeRequest()
         val request = server.takeRequest()
         val body = request.body.readUtf8()
+        assertEquals("GET", authRequest.method)
+        assertEquals("/auth", authRequest.path)
         assertEquals("POST", request.method)
         assertEquals("/translate?api-version=3.0&to=zh-Hans", request.path)
-        assertEquals("microsoft-key", request.getHeader("Ocp-Apim-Subscription-Key"))
-        assertEquals("eastus", request.getHeader("Ocp-Apim-Subscription-Region"))
+        assertEquals("Bearer edge-token", request.getHeader("Authorization"))
+        assertEquals(null, request.getHeader("Ocp-Apim-Subscription-Key"))
+        assertEquals(null, request.getHeader("Ocp-Apim-Subscription-Region"))
         assertTrue(body.contains(""""Text":"first""""))
         assertTrue(body.contains(""""Text":"second""""))
     }
 
     @Test
-    fun `translate omits region header when region is blank`() {
+    fun `translate reuses edge token for subsequent requests`() {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("edge-token"),
+        )
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
                 .setBody("""[{"translations": [{"text": "Bonjour"}]}]"""),
         )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""[{"translations": [{"text": "Salut"}]}]"""),
+        )
         server.start()
         val engine = MicrosoftTranslatorEngine(
-            apiKeyProvider = { "microsoft-key" },
             baseUrlProvider = { server.url("/").toString().removeSuffix("/") },
+            authUrlProvider = { server.url("/auth").toString() },
             targetLangProvider = { "fr" },
-            regionProvider = { " " },
         )
 
         engine.translate(listOf(segment("seg-1", "hello")))
+        engine.translate(listOf(segment("seg-2", "hi")))
 
-        val request = server.takeRequest()
-        assertEquals("/translate?api-version=3.0&to=fr", request.path)
-        assertNull(request.getHeader("Ocp-Apim-Subscription-Region"))
+        val requests = listOf(server.takeRequest(), server.takeRequest(), server.takeRequest())
+        assertEquals(listOf("/auth", "/translate?api-version=3.0&to=fr", "/translate?api-version=3.0&to=fr"), requests.map { it.path })
     }
 
     private fun segment(id: String, content: String) =

@@ -49,8 +49,10 @@ Smoke test for the provider-first snapshot of IDEA Immersive Translate.
 
 ### Missing Provider Credential
 
-- For each provider, trigger translation without configuring its credential
+- For OpenAI-compatible and Gemini, trigger translation without configuring its credential
 - Expect a clear error or notification and no inlay output
+- For Google Translate and Microsoft Translator, leave credential fields empty
+- Expect translation to start without prompting for an API key
 
 ### Provider Switching
 
@@ -59,12 +61,13 @@ Smoke test for the provider-first snapshot of IDEA Immersive Translate.
 - Switch to Gemini and translate the same comment
 - Expect a new request through Gemini and no credential leakage between providers
 
-### Google Cloud Limitation
+### Free Google and Microsoft Translation
 
-- Configure Google Cloud Translation with a bearer token, project ID, and location
-- Expect translation to work
-- Paste a service account JSON key as the credential
-- Expect it to be treated as a raw bearer credential; service account JWT exchange is outside this snapshot
+- Select Google Translate and translate one short comment
+- Expect translation to work without API key, project ID, or location
+- Select Microsoft Translator and translate one short comment
+- Expect translation to work without subscription key or region
+- Confirm both requests honor the IDE proxy settings
 
 ### Rate Limit
 

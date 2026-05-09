@@ -1,6 +1,7 @@
 package com.laowang.idea.immersive.engine
 
 import com.intellij.openapi.extensions.ExtensionPointName
+import com.laowang.idea.immersive.core.TranslationCancellationToken
 import com.laowang.idea.immersive.core.TextSegment
 import com.laowang.idea.immersive.core.Translation
 import com.laowang.idea.immersive.core.TranslationError
@@ -10,12 +11,25 @@ interface TranslationEngine {
     val displayName: String
 
     fun translate(segments: List<TextSegment>): TranslationEngineResult
+
+    fun translate(
+        segments: List<TextSegment>,
+        cancellationToken: TranslationCancellationToken,
+    ): TranslationEngineResult {
+        return if (cancellationToken.isCancelled) {
+            TranslationEngineResult.Cancelled
+        } else {
+            translate(segments)
+        }
+    }
 }
 
 sealed interface TranslationEngineResult {
     data class Success(val translations: List<Translation>) : TranslationEngineResult
 
     data class Failure(val error: TranslationError) : TranslationEngineResult
+
+    data object Cancelled : TranslationEngineResult
 }
 
 object EngineRegistry {

@@ -141,10 +141,19 @@ class ImmersiveTranslateSettings : PersistentStateComponent<ImmersiveTranslateSe
             val defaults = defaultProviderConfigs()
             val mergedDefaults = defaults.map { defaultConfig ->
                 val configured = configuredById[defaultConfig.id] ?: defaultConfig
-                val migrated = if (defaultConfig.id == ProviderIds.OPENAI) {
-                    configured.copy(baseUrl = openAiBaseUrl, model = openAiModel)
-                } else {
-                    configured
+                val migrated = when (defaultConfig.id) {
+                    ProviderIds.OPENAI -> configured.copy(baseUrl = openAiBaseUrl, model = openAiModel)
+                    ProviderIds.MICROSOFT,
+                    ProviderIds.GOOGLE,
+                    -> configured.copy(
+                        kind = defaultConfig.kind,
+                        displayName = defaultConfig.displayName,
+                        baseUrl = defaultConfig.baseUrl,
+                        region = "",
+                        projectId = "",
+                        location = "",
+                    )
+                    else -> configured
                 }
                 migrated.copy(targetLang = migrated.targetLang.ifBlank { targetLang }).normalized(defaultConfig)
             }

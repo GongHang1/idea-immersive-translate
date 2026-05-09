@@ -2,6 +2,8 @@ package com.laowang.idea.immersive.engine
 
 import com.laowang.idea.immersive.core.TextSegment
 import com.laowang.idea.immersive.core.Translation
+import com.laowang.idea.immersive.core.TranslationCancellationToken
+import com.laowang.idea.immersive.core.TranslationCancelledException
 import com.laowang.idea.immersive.core.TranslationError
 import com.laowang.idea.immersive.settings.CredentialsStore
 import com.laowang.idea.immersive.settings.ImmersiveTranslateSettings
@@ -26,16 +28,23 @@ class OpenAIEngine(
     override val id: String = ENGINE_ID
     override val displayName: String = "OpenAI"
 
-    override fun translate(segments: List<TextSegment>): TranslationEngineResult {
+    override fun translate(segments: List<TextSegment>): TranslationEngineResult =
+        translate(segments, TranslationCancellationToken())
+
+    override fun translate(
+        segments: List<TextSegment>,
+        cancellationToken: TranslationCancellationToken,
+    ): TranslationEngineResult {
         if (segments.isEmpty()) {
             return TranslationEngineResult.Success(emptyList())
         }
 
         return try {
+            cancellationToken.throwIfCancelled()
             val apiKey = apiKeyProvider().normalizeApiKey()
                 ?: return TranslationEngineResult.Failure(TranslationError.NoApiKey)
             val request = buildRequest(apiKey, segments)
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).executeCancellable(cancellationToken) { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     throw OpenAIEngineException(response.toTranslationError(body, json))
@@ -54,6 +63,8 @@ class OpenAIEngine(
                     },
                 )
             }
+        } catch (exception: TranslationCancelledException) {
+            TranslationEngineResult.Cancelled
         } catch (exception: OpenAIEngineException) {
             TranslationEngineResult.Failure(exception.error)
         } catch (exception: SocketTimeoutException) {

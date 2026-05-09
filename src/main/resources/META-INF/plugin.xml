@@ -5,7 +5,7 @@
 
     <description><![CDATA[
         <p>Immersive bilingual translation for code comments, Markdown, and plain text files.
-        Supports OpenAI-compatible, Gemini, Microsoft Translator, and Google Cloud Translation providers with provider-scoped credentials.</p>
+        Supports OpenAI-compatible, Gemini, free Microsoft Translator, and free Google Translate providers.</p>
     ]]></description>
 
     <resource-bundle>messages.ImmersiveTranslateBundle</resource-bundle>
@@ -58,7 +58,7 @@
         <translationEngine implementation="com.laowang.idea.immersive.engine.OpenAIEngine"/>
         <translationEngine implementation="com.laowang.idea.immersive.engine.GeminiEngine"/>
         <translationEngine implementation="com.laowang.idea.immersive.engine.MicrosoftTranslatorEngine"/>
-        <translationEngine implementation="com.laowang.idea.immersive.engine.GoogleCloudTranslateEngine"/>
+        <translationEngine implementation="com.laowang.idea.immersive.engine.GoogleTranslateEngine"/>
         <textExtractor implementation="com.laowang.idea.immersive.extractor.PsiCommentExtractor"/>
         <textExtractor implementation="com.laowang.idea.immersive.extractor.MarkdownBlockExtractor"/>
         <textExtractor implementation="com.laowang.idea.immersive.extractor.PlainTextBlockExtractor"/>

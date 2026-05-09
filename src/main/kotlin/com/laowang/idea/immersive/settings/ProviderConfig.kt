@@ -15,6 +15,7 @@ enum class ProviderKind {
     OPENAI_COMPATIBLE,
     GEMINI,
     MICROSOFT_TRANSLATOR,
+    GOOGLE_TRANSLATE,
     GOOGLE_CLOUD_TRANSLATE,
 }
 
@@ -50,14 +51,13 @@ fun defaultProviderConfigs(): List<ProviderConfigState> = listOf(
         id = ProviderIds.MICROSOFT,
         kind = ProviderKind.MICROSOFT_TRANSLATOR,
         displayName = "Microsoft Translator",
-        baseUrl = "https://api.cognitive.microsofttranslator.com",
+        baseUrl = "https://api-edge.cognitive.microsofttranslator.com",
     ),
     ProviderConfigState(
         id = ProviderIds.GOOGLE,
-        kind = ProviderKind.GOOGLE_CLOUD_TRANSLATE,
-        displayName = "Google Cloud Translation",
-        baseUrl = "https://translation.googleapis.com",
-        location = "global",
+        kind = ProviderKind.GOOGLE_TRANSLATE,
+        displayName = "Google Translate",
+        baseUrl = "https://translate.googleapis.com",
     ),
 )
 
@@ -71,3 +71,9 @@ fun ProviderConfigState.normalized(defaults: ProviderConfigState): ProviderConfi
     projectId = projectId.trim(),
     location = location.trim().ifEmpty { defaults.location },
 )
+
+fun ProviderKind.requiresApiKey(): Boolean =
+    this == ProviderKind.OPENAI_COMPATIBLE || this == ProviderKind.GEMINI
+
+fun ProviderKind.usesModel(): Boolean =
+    this == ProviderKind.OPENAI_COMPATIBLE || this == ProviderKind.GEMINI

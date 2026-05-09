@@ -2,8 +2,9 @@ package com.laowang.idea.immersive.engine
 
 import com.laowang.idea.immersive.core.TextSegment
 import com.laowang.idea.immersive.core.Translation
+import com.laowang.idea.immersive.core.TranslationCancellationToken
+import com.laowang.idea.immersive.core.TranslationCancelledException
 import com.laowang.idea.immersive.core.TranslationError
-import com.laowang.idea.immersive.settings.CredentialsStore
 import com.laowang.idea.immersive.settings.ProviderIds
 import com.laowang.idea.immersive.settings.SettingsService
 import java.io.InterruptedIOException
@@ -19,10 +20,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 class MicrosoftTranslatorEngine(
-    private val apiKeyProvider: () -> String? = { CredentialsStore.getInstance().getApiKey(ProviderIds.MICROSOFT) },
     private val baseUrlProvider: () -> String = { SettingsService.getInstance().providerConfig(ProviderIds.MICROSOFT).baseUrl },
+    private val authUrlProvider: () -> String = { DEFAULT_AUTH_URL },
     private val targetLangProvider: () -> String = { SettingsService.getInstance().providerConfig(ProviderIds.MICROSOFT).targetLang },
-    private val regionProvider: () -> String = { SettingsService.getInstance().providerConfig(ProviderIds.MICROSOFT).region },
     private val client: OkHttpClient = defaultClient(),
     private val json: Json = defaultJson(),
     private val clock: () -> Long = System::currentTimeMillis,
@@ -30,16 +30,24 @@ class MicrosoftTranslatorEngine(
     override val id: String = ENGINE_ID
     override val displayName: String = "Microsoft Translator"
 
-    override fun translate(segments: List<TextSegment>): TranslationEngineResult {
+    @Volatile
+    private var cachedAuthToken: String? = null
+
+    override fun translate(segments: List<TextSegment>): TranslationEngineResult =
+        translate(segments, TranslationCancellationToken())
+
+    override fun translate(
+        segments: List<TextSegment>,
+        cancellationToken: TranslationCancellationToken,
+    ): TranslationEngineResult {
         if (segments.isEmpty()) {
             return TranslationEngineResult.Success(emptyList())
         }
 
         return try {
-            val apiKey = apiKeyProvider().normalizeApiKey()
-                ?: return TranslationEngineResult.Failure(TranslationError.NoApiKey)
-            val request = buildRequest(apiKey, segments)
-            client.newCall(request).execute().use { response ->
+            cancellationToken.throwIfCancelled()
+            val request = buildRequest(authToken(cancellationToken), segments)
+            client.newCall(request).executeCancellable(cancellationToken) { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
                     return TranslationEngineResult.Failure(response.toTranslationError(body))
@@ -51,6 +59,8 @@ class MicrosoftTranslatorEngine(
                     },
                 )
             }
+        } catch (exception: TranslationCancelledException) {
+            TranslationEngineResult.Cancelled
         } catch (exception: SocketTimeoutException) {
             TranslationEngineResult.Failure(TranslationError.NetworkTimeout)
         } catch (exception: InterruptedIOException) {
@@ -62,7 +72,27 @@ class MicrosoftTranslatorEngine(
         }
     }
 
-    private fun buildRequest(apiKey: String, segments: List<TextSegment>): Request {
+    private fun authToken(cancellationToken: TranslationCancellationToken): String {
+        cachedAuthToken?.let { return it }
+        val request = Request.Builder()
+            .url(authUrlProvider().normalizeAuthUrl().toHttpUrl())
+            .get()
+            .build()
+        client.newCall(request).executeCancellable(cancellationToken) { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw MicrosoftTranslatorException(response.toTranslationError(body))
+            }
+            val token = body.trim().trim('"').takeIf { it.isNotEmpty() }
+                ?: throw MicrosoftTranslatorException(
+                    TranslationError.Unknown(IllegalStateException("Microsoft Edge auth response did not contain token")),
+                )
+            cachedAuthToken = token
+            return token
+        }
+    }
+
+    private fun buildRequest(authToken: String, segments: List<TextSegment>): Request {
         val url = "${baseUrlProvider().normalizeBaseUrl()}/translate"
             .toHttpUrl()
             .newBuilder()
@@ -72,15 +102,12 @@ class MicrosoftTranslatorEngine(
         val payload = segments.map { MicrosoftTranslateRequest(it.content) }
         val body = json.encodeToString(ListSerializer(MicrosoftTranslateRequest.serializer()), payload)
             .toRequestBody(JSON_MEDIA_TYPE)
-        val builder = Request.Builder()
+        return Request.Builder()
             .url(url)
             .addHeader("Content-Type", JSON_MEDIA_TYPE.toString())
-            .addHeader("Ocp-Apim-Subscription-Key", apiKey)
+            .addHeader("Authorization", "Bearer $authToken")
             .post(body)
-        regionProvider().trim().takeIf { it.isNotEmpty() }?.let {
-            builder.addHeader("Ocp-Apim-Subscription-Region", it)
-        }
-        return builder.build()
+            .build()
     }
 
     private fun decodeTranslations(responseBody: String, expectedCount: Int): List<String> {
@@ -120,14 +147,16 @@ class MicrosoftTranslatorEngine(
             else -> targetLang.trim()
         }
 
-    private fun String?.normalizeApiKey(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
-
     private fun String.normalizeBaseUrl(): String =
         trim().ifEmpty { DEFAULT_BASE_URL }.removeSuffix("/")
 
+    private fun String.normalizeAuthUrl(): String =
+        trim().ifEmpty { DEFAULT_AUTH_URL }
+
     companion object {
         const val ENGINE_ID = ProviderIds.MICROSOFT
-        const val DEFAULT_BASE_URL = "https://api.cognitive.microsofttranslator.com"
+        const val DEFAULT_BASE_URL = "https://api-edge.cognitive.microsofttranslator.com"
+        const val DEFAULT_AUTH_URL = "https://edge.microsoft.com/translate/auth"
 
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 

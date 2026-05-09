@@ -22,6 +22,6 @@ class ImmersiveTranslateAction : AnAction() {
         val project = e.getData(CommonDataKeys.PROJECT) ?: return
         val sourceType = SourceTypeResolver.resolve(editor)
         project.getService(TranslationCoordinator::class.java)
-            .translate(editor, sourceType, ExtractionScope.WHOLE_FILE)
+            .toggle(editor, sourceType, ExtractionScope.WHOLE_FILE)
     }
 }

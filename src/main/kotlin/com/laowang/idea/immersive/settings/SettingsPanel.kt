@@ -32,9 +32,6 @@ class SettingsPanel(
     private val targetLangField = JBTextField()
     private val baseUrlField = JBTextField()
     private val modelField = JBTextField()
-    private val regionField = JBTextField()
-    private val projectIdField = JBTextField()
-    private val locationField = JBTextField()
     private val rendererCombo = ComboBox(rendererOptions)
     private val cacheMaxEntriesField = JBTextField()
 
@@ -54,28 +51,13 @@ class SettingsPanel(
                 .align(AlignX.FILL)
                 .resizableColumn()
         }
-        row(message("settings.openai.base.url", "OpenAI Base URL")) {
+        row(message("settings.base.url", "Base URL")) {
             cell(baseUrlField)
                 .align(AlignX.FILL)
                 .resizableColumn()
         }
         row(message("settings.openai.model", "OpenAI Model")) {
             cell(modelField)
-                .align(AlignX.FILL)
-                .resizableColumn()
-        }
-        row(message("settings.microsoft.region", "Microsoft Region")) {
-            cell(regionField)
-                .align(AlignX.FILL)
-                .resizableColumn()
-        }
-        row(message("settings.google.project", "Google Project ID")) {
-            cell(projectIdField)
-                .align(AlignX.FILL)
-                .resizableColumn()
-        }
-        row(message("settings.google.location", "Google Location")) {
-            cell(locationField)
                 .align(AlignX.FILL)
                 .resizableColumn()
         }
@@ -104,14 +86,12 @@ class SettingsPanel(
 
     fun isModified(): Boolean {
         val provider = selectedProviderConfig()
+        val requiresApiKey = provider.kind.requiresApiKey()
         return selectedEngineId() != settings.activeEngineId ||
-            currentApiKey() != credentialsStore.getApiKey(provider.id).orEmpty() ||
+            (requiresApiKey && currentApiKey() != credentialsStore.getApiKey(provider.id).orEmpty()) ||
             targetLangField.text.trim() != provider.targetLang ||
             baseUrlField.text.trim() != provider.baseUrl ||
-            modelField.text.trim() != provider.model ||
-            regionField.text.trim() != provider.region ||
-            projectIdField.text.trim() != provider.projectId ||
-            locationField.text.trim() != provider.location ||
+            currentModel(provider) != provider.model ||
             selectedRendererId() != settings.rendererId ||
             cacheMaxEntriesField.text.trim() != settings.cacheMaxEntries.toString()
     }
@@ -127,16 +107,20 @@ class SettingsPanel(
             settings.providerConfig(providerId).copy(
                 targetLang = targetLang,
                 baseUrl = baseUrlField.text.trim(),
-                model = modelField.text.trim(),
-                region = regionField.text.trim(),
-                projectId = projectIdField.text.trim(),
-                location = locationField.text.trim(),
+                model = currentModel(settings.providerConfig(providerId)),
+                region = "",
+                projectId = "",
+                location = "",
             ),
         )
         settings.rendererId = selectedRendererId()
         settings.cacheMaxEntries = cacheMaxEntriesField.text.trim().toIntOrNull()?.takeIf { it > 0 }
             ?: throw ConfigurationException("Cache Max Entries must be a positive integer")
-        credentialsStore.setApiKey(providerId, currentApiKey().ifBlank { null })
+        if (settings.providerConfig(providerId).kind.requiresApiKey()) {
+            credentialsStore.setApiKey(providerId, currentApiKey().ifBlank { null })
+        } else {
+            credentialsStore.setApiKey(providerId, null)
+        }
         reset()
     }
 
@@ -159,24 +143,20 @@ class SettingsPanel(
 
     private fun loadSelectedProvider() {
         val provider = selectedProviderConfig()
-        apiKeyField.text = credentialsStore.getApiKey(provider.id).orEmpty()
+        val requiresApiKey = provider.kind.requiresApiKey()
+        apiKeyField.text = if (requiresApiKey) credentialsStore.getApiKey(provider.id).orEmpty() else ""
         targetLangField.text = provider.targetLang
         baseUrlField.text = provider.baseUrl
-        modelField.text = provider.model
-        regionField.text = provider.region
-        projectIdField.text = provider.projectId
-        locationField.text = provider.location
+        modelField.text = if (provider.kind.usesModel()) provider.model else ""
 
-        val hasModel = provider.kind == ProviderKind.OPENAI_COMPATIBLE || provider.kind == ProviderKind.GEMINI
-        val hasRegion = provider.kind == ProviderKind.MICROSOFT_TRANSLATOR
-        val hasGoogleProject = provider.kind == ProviderKind.GOOGLE_CLOUD_TRANSLATE
-        modelField.isEnabled = hasModel
-        regionField.isEnabled = hasRegion
-        projectIdField.isEnabled = hasGoogleProject
-        locationField.isEnabled = hasGoogleProject
+        apiKeyField.isEnabled = requiresApiKey
+        modelField.isEnabled = provider.kind.usesModel()
     }
 
     private fun currentApiKey(): String = String(apiKeyField.password).trim()
+
+    private fun currentModel(provider: ProviderConfigState): String =
+        if (provider.kind.usesModel()) modelField.text.trim() else ""
 
     companion object {
         fun message(key: String, fallback: String): String =

@@ -24,6 +24,11 @@ class ImmersiveTranslateSettingsTest {
             listOf(ProviderIds.OPENAI, ProviderIds.GEMINI, ProviderIds.MICROSOFT, ProviderIds.GOOGLE),
             settings.providerConfigs().map { it.id },
         )
+        assertEquals("Microsoft Translator", settings.providerConfig(ProviderIds.MICROSOFT).displayName)
+        assertEquals("https://api-edge.cognitive.microsofttranslator.com", settings.providerConfig(ProviderIds.MICROSOFT).baseUrl)
+        assertEquals("Google Translate", settings.providerConfig(ProviderIds.GOOGLE).displayName)
+        assertEquals("https://translate.googleapis.com", settings.providerConfig(ProviderIds.GOOGLE).baseUrl)
+        assertEquals(ProviderKind.GOOGLE_TRANSLATE, settings.providerConfig(ProviderIds.GOOGLE).kind)
     }
 
     @Test

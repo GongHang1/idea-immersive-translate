@@ -1,6 +1,7 @@
 package com.laowang.idea.immersive.core
 
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.laowang.idea.immersive.cache.TranslationCache
@@ -11,6 +12,27 @@ import com.laowang.idea.immersive.renderer.TranslationRenderer
 import com.laowang.idea.immersive.renderer.inlay.InlayRenderer
 
 class TranslationCoordinatorTest : BasePlatformTestCase() {
+    fun testTranslateRunsInsideProgressTask() {
+        myFixture.configureByText("A.java", "// hello\nclass A {}")
+        val segment = segment("seg-1", "hello")
+        val renderer = RecordingRenderer()
+        val progressRunner = RecordingProgressRunner()
+        val coordinator = TranslationCoordinator(
+            project = project,
+            extractorProvider = { FakeExtractor(listOf(segment)) },
+            engineProvider = { PrefixEngine() },
+            cache = TranslationCache(maxEntries = 10),
+            rendererProvider = { renderer },
+            progressRunner = progressRunner,
+            progressTitleProvider = { "test translating" },
+        )
+
+        coordinator.translate(myFixture.editor, SourceType.PSI_COMMENT, ExtractionScope.WHOLE_FILE)
+
+        assertEquals(listOf("test translating"), progressRunner.titles)
+        assertEquals(listOf("seg-1" to "[zh] hello"), renderer.rendered)
+    }
+
     fun testTranslatesMissingSegmentsAndRendersResults() {
         myFixture.configureByText("A.java", "// hello\nclass A {}")
         val segment = segment("seg-1", "hello")
@@ -66,6 +88,30 @@ class TranslationCoordinatorTest : BasePlatformTestCase() {
 
         coordinator.clear(myFixture.editor)
 
+        assertFalse(coordinator.hasVisibleTranslations(myFixture.editor))
+    }
+
+    fun testToggleClearsVisibleTranslationsInsteadOfRetranslating() {
+        myFixture.configureByText("A.java", "// hello\nclass A {}")
+        val segment = segment("seg-1", "hello")
+        val renderer = InlayRenderer()
+        val engine = PrefixEngine()
+        val coordinator = TranslationCoordinator(
+            project = project,
+            extractorProvider = { FakeExtractor(listOf(segment)) },
+            engineProvider = { engine },
+            cache = TranslationCache(maxEntries = 10),
+            rendererProvider = { renderer },
+        )
+
+        coordinator.toggle(myFixture.editor, SourceType.PSI_COMMENT, ExtractionScope.WHOLE_FILE)
+
+        assertEquals(1, engine.calls)
+        assertTrue(coordinator.hasVisibleTranslations(myFixture.editor))
+
+        coordinator.toggle(myFixture.editor, SourceType.PSI_COMMENT, ExtractionScope.WHOLE_FILE)
+
+        assertEquals(1, engine.calls)
         assertFalse(coordinator.hasVisibleTranslations(myFixture.editor))
     }
 
@@ -207,6 +253,15 @@ class TranslationCoordinatorTest : BasePlatformTestCase() {
 
         override fun translate(segments: List<TextSegment>): TranslationEngineResult =
             TranslationEngineResult.Failure(error)
+    }
+
+    private class RecordingProgressRunner : TranslationProgressRunner {
+        val titles = mutableListOf<String>()
+
+        override fun run(project: Project, title: String, task: (TranslationCancellationToken) -> Unit) {
+            titles += title
+            task(TranslationCancellationToken())
+        }
     }
 
     private class RecordingRenderer : TranslationRenderer {
